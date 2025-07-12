@@ -20,23 +20,27 @@ extends CharacterBody3D
 ## Look around rotation speed.
 @export var look_speed : float = 0.002
 ## Normal speed.
-@export var base_speed : float = 7.0
+@export var base_speed : float = 3.0
 ## Speed of jump.
 @export var jump_velocity : float = 4.5
 ## How fast do we run?
-@export var sprint_speed : float = 10.0
+@export var sprint_speed : float = 4.0
 ## How fast do we freefly?
 @export var freefly_speed : float = 25.0
 
+@export var footstep_sounds: Array[AudioStream] = []  # Add audio streams in the Inspector
+@export var base_footstep_interval := 0.5  # Walking interval
+@export var sprint_footstep_interval := 0.3  # Faster interval when sprinting
+
 @export_group("Input Actions")
 ## Name of Input Action to move Left.
-@export var input_left : String = "ui_left"
+@export var input_left : String = "left"
 ## Name of Input Action to move Right.
-@export var input_right : String = "ui_right"
+@export var input_right : String = "right"
 ## Name of Input Action to move Forward.
-@export var input_forward : String = "ui_up"
+@export var input_forward : String = "up"
 ## Name of Input Action to move Backward.
-@export var input_back : String = "ui_down"
+@export var input_back : String = "down"
 ## Name of Input Action to Jump.
 @export var input_jump : String = "ui_accept"
 ## Name of Input Action to Sprint.
@@ -49,9 +53,14 @@ var look_rotation : Vector2
 var move_speed : float = 0.0
 var freeflying : bool = false
 
+@onready var footstep_player := $FootstepPlayer
+var footstep_timer := 0.0
+
 ## IMPORTANT REFERENCES
 @onready var head: Node3D = $Head
 @onready var collider: CollisionShape3D = $Collider
+
+signal orb_collected
 
 func _ready() -> void:
 	check_input_mappings()
@@ -117,6 +126,24 @@ func _physics_process(delta: float) -> void:
 	
 	# Use velocity to actually move
 	move_and_slide()
+	
+	if can_move and is_on_floor():
+		var input_dir := Input.get_vector(input_left, input_right, input_forward, input_back)
+		if input_dir.length() > 0.1:
+			footstep_timer -= delta
+			var interval := base_footstep_interval
+			if can_sprint and Input.is_action_pressed(input_sprint):
+				interval = sprint_footstep_interval
+			if footstep_timer <= 0:
+				play_footstep_sound()
+				footstep_timer = interval
+		else:
+			footstep_timer = 0.0
+			if footstep_player.playing:
+				footstep_player.stop()
+	else:
+		if footstep_player.playing:
+			footstep_player.stop()
 
 
 ## Rotate us to look around.
@@ -176,3 +203,18 @@ func check_input_mappings():
 	if can_freefly and not InputMap.has_action(input_freefly):
 		push_error("Freefly disabled. No InputAction found for input_freefly: " + input_freefly)
 		can_freefly = false
+	
+func play_footstep_sound():
+	if footstep_sounds.size() == 0 or not is_on_floor():
+		return
+
+	if not footstep_player.playing:
+		var index = randi() % footstep_sounds.size()
+		footstep_player.stream = footstep_sounds[index]
+
+		# Base pitch is slightly slower than normal
+		var base_pitch := 0.85  # Adjust to taste
+		var variation := randf_range(-0.05, 0.05)  # Adds realism
+		footstep_player.pitch_scale = base_pitch + variation
+
+		footstep_player.play()
